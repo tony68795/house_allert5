@@ -1,9 +1,10 @@
 import asyncio
-import threading
+from flask import Flask
+from telegram import Bot
 import requests
 from bs4 import BeautifulSoup
-from telegram import Bot
-from flask import Flask
+
+app = Flask(__name__)
 
 # Telegram instellingen
 TELEGRAM_API_TOKEN = '7826115707:AAFZSMaITChD_KJifuhvepcVuBub5kUrmxs'
@@ -18,13 +19,7 @@ def get_new_listings():
     soup = BeautifulSoup(response.text, 'html.parser')
     
     listings = soup.find_all('a', class_='listing-search-item__link listing-search-item__link--title')
-    
-    new_listings = []
-    for listing in listings:
-        title = listing.get_text(strip=True)
-        link = "https://www.pararius.nl" + listing.get('href')
-        new_listings.append(f"{title}: {link}")
-     
+    new_listings = [f"{listing.get_text(strip=True)}: https://www.pararius.nl{listing.get('href')}" for listing in listings]
     return new_listings
 
 # Functie om een Telegram-bericht te sturen
@@ -34,36 +29,26 @@ async def send_telegram_message(message):
 
 # Functie om nieuwe woningen te controleren en berichten te sturen
 async def check_for_new_listings():
-    previous_listings = []
-
+    previous_listings = set()
     while True:
         print("Checking for new listings...")
-        current_listings = get_new_listings()
-        
-        new_entries = set(current_listings) - set(previous_listings)
-        
+        current_listings = set(get_new_listings())
+        new_entries = current_listings - previous_listings
+
         if new_entries:
             for new_entry in new_entries:
                 await send_telegram_message(f"Nieuwe woning gevonden: {new_entry}")
-        
+
         previous_listings = current_listings
-        await asyncio.sleep(30)
+        await asyncio.sleep(30)  # Controleer elke 30 seconden
 
-# Start de bot in een aparte thread
-def start_bot():
-    asyncio.run(check_for_new_listings())
-
-# Eenvoudige Flask-server voor port binding
-app = Flask(__name__)
-
+# Route voor Render's port binding
 @app.route('/')
 def home():
     return "Bot is running!"
 
+# Start de Flask-server en bot samen
 if __name__ == "__main__":
-    # Start de bot in een aparte thread
-    threading.Thread(target=start_bot).start()
-    
-    # Start de Flask-server (port binding voor Render)
-    port = int(os.environ.get('PORT', 10000))
-    app.run(host='0.0.0.0', port=port)
+    loop = asyncio.get_event_loop()
+    loop.create_task(check_for_new_listings())  # Start bot-taak
+    app.run(host='0.0.0.0', port=5000)  # Start Flask-server op poort 5000
